@@ -13,6 +13,7 @@ import bcrypt
 import shutil
 import sys
 import base64
+from multiprocessing import Pool
 
 if __name__ == "__main__":
     print("This Module Cannot be run as script")
@@ -694,43 +695,43 @@ class forge:
         """
         Executes a query against the feature map to retrieve intersecting indices.
 
-        This method processes a list of query dictionaries, each specifying a 'field' and a 'unique_value'.
-        It retrieves the indices associated with each unique value within the specified field from the map.
+        This method processes a list of query dictionaries, each specifying key-value pairs.
+        It retrieves the indices associated with each value for the corresponding key from the map.
         Then, it intersects these indices across all queries to find common records that match all criteria.
 
         Parameters:
         - query_dictionary_list (list of dict): A list of dictionaries, where each dictionary contains
-        a 'field' key representing the field to be queried, and a 'unique_value' key representing the
-        unique value to be matched in the field.
+        key-value pairs representing the field to be queried and the value to be matched in that field.
 
         Returns:
         - current (list): A sorted list of indices that represent the intersection of all query results.
         If the queries result in no intersection, an empty list is returned.
 
         Raises:
-        - KeyError: If any 'unique_value' from the query is not found in the specified 'field' within the map,
-        or if 'field' does not exist.
+        - KeyError: If any value from the query is not found in the corresponding field within the map,
+        or if a key (field) does not exist.
 
         Usage:
-        - To perform a query to find records where the field 'category' has the unique value 'books' and the
-        field 'author' has the unique value 'Smith', call:
-        `query_map([{'field': 'category', 'unique_value': 'books'},
-                    {'field': 'author', 'unique_value': 'Smith'}])`
+        - To perform a query to find records where the field 'category' has the value 'books' and the
+        field 'author' has the value 'Smith', call:
+        `query_map([{'category': 'books', 'author': 'Smith'}])`
 
         Notes:
         - The method assumes that `self.map` is preloaded and contains a 'features' dictionary that maps each
-        field to another dictionary, mapping unique values to lists of indices.
+        field to another dictionary, mapping values to lists of indices.
         - The query is an 'AND' query, meaning that it will only return indices of records that match all
-        provided field-value pairs.
+        provided key-value pairs.
         - It is assumed that the indices are unique and sorted within each list in `self.map['features']`.
         """
         indice_matrix = []
         for query_object in query_dictionary_list:
+            field = list(query_object.keys())[0]
+            uniq = query_object[field]
             try:
-                indices = self.map["features"][query_object["field"]][query_object["value"]]
+                indices = self.map["features"][field][uniq]
                 indice_matrix.append(indices)
             except:
-                raise KeyError(f"missing {query_object['value']} in {query_object['field']}")
+                raise KeyError(f"missing {uniq} in {field}")
         
         for arr in indice_matrix:
             arr.sort()
@@ -739,6 +740,39 @@ class forge:
                 current = list(set(current) & set(line))
             current.sort()
             return current
+        
+    def split_batch(self,indices,batch_size):
+        """
+        Splits a list of indices into multiple smaller lists (batches) based on the specified batch size.
+
+        This function iterates through the provided `indices` list and groups its elements into smaller sub-lists.
+        Each sub-list (batch) will have a maximum size equal to `batch_size`. If the number of elements in `indices`
+        is not a multiple of `batch_size`, the last batch may contain fewer elements.
+
+        Parameters:
+        - indices (list): A list of indices (or any items) to be split into batches.
+        - batch_size (int): The maximum number of elements each batch should contain.
+
+        Returns:
+        - list of lists: A list where each element is a sub-list (batch) of `indices`, with each batch having at most
+                        `batch_size` elements.
+
+        Example:
+        >>> split_batch([1, 2, 3, 4, 5], 2)
+        [[1, 2], [3, 4], [5]]
+        """
+        lists=[[]]
+        num_indices=0
+        list_number=0
+        for i in indices:
+            if num_indices<batch_size:
+                lists[list_number].append(i)
+                num_indices+=1
+            else:
+                num_indices = 0
+                list_number +=1
+                lists.append([])
+        return lists
     
     # retrieves a list of specified indices
     def retrieve_indices(self,indice_list):
@@ -781,6 +815,7 @@ class forge:
         current_line = 0
         collection = []
         suite = Fernet(self.validate_user()["master"])
+
         with open(self.files["objects"],"rb") as file:
             for line in file:
                 if indices_indice<len(indices):
@@ -793,6 +828,43 @@ class forge:
                         indices_indice+=1
                 current_line+=1
         return collection
+    
+    def process_batch(self,indices, key):
+        collection = []
+        suite = Fernet(key)
+        indices_indice = 0
+        current_line = 0
+
+        with open(self.files["objects"],"rb") as file:
+            for line in file:
+                if indices_indice<len(indices):
+                    if (current_line == indices[indices_indice]):
+                        record = json.loads(suite.decrypt(line).decode("utf-8"))
+                        for key in list(record.keys()):
+                            if key== "%BYTES%":
+                                record["%BYTES%"]="Byte_Stream"
+                        collection.append(record)
+                        indices_indice+=1
+                current_line+=1
+        return collection
+    
+    def retrieve_indices_multi(self, indice_list, num_processes=2):
+        # Validate user and get key
+        key = self.validate_user()["master"]
+
+        # Split the indices into batches
+        indice_batches = self.split_batch(indice_list, len(indice_list) // num_processes)
+
+        # Prepare arguments for each process
+        args = [(batch, key) for batch in indice_batches]
+
+        # Start a pool of processes and process each batch
+        with Pool(num_processes) as pool:
+            results = pool.starmap(self.process_batch, args)
+
+        # Combine the results from all processes
+        combined_results = [record for batch in results for record in batch]
+        return combined_results
     
     # retrieves a specific indice
     def retrieve_indice(self,indice):
@@ -863,36 +935,37 @@ class forge:
         return data
     
     # pulls the archive from a given indice and saves it as a zip file at the given path
-    def pull_archive(self,indice,zip_filepath):
+
+    def pull_archive(self, indice, filepath):
         """
-        Extracts an archived file from an encrypted record by its index and saves it to a specified filepath.
+        Extracts an archived file from an encrypted record by its index, unzips it, and saves the contents to a specified filepath.
 
         This method retrieves a single record using its index, decodes the base64-encoded content of the
-        archived file contained within the record, and writes the binary data to a file at the specified
-        path. This is typically used to reconstruct an archived file previously stored in an encrypted format.
+        archived file contained within the record, unzips the content, and writes the extracted files to a directory at the specified
+        path. This is typically used to reconstruct files previously stored in an encrypted and archived format.
 
         Parameters:
         - indice (int): The index of the record in the encrypted file from which to extract the archive.
-        - zip_filepath (str): The file path where the extracted archive will be saved.
+        - zip_filepath (str): The directory path where the extracted files will be saved.
 
         Side Effects:
-        - Writes to a file specified by `zip_filepath`. If the file already exists, it will be overwritten.
+        - Writes to a directory specified by `zip_filepath`. If the directory already exists, its contents might be overwritten.
 
         Raises:
         - IndexError: If the index provided is out of the range of existing records.
         - KeyError: If the '%BYTES%' key is not present in the retrieved record.
         - binascii.Error: If base64 decoding fails.
         - IOError: If there is an issue writing to the file at `zip_filepath`.
+        - zipfile.BadZipFile: If the extracted content is not a valid zip file.
 
         Usage:
-        - To extract an archived file at record index 10 and save it to 'path/to/archive.zip', call:
-        `pull_archive(indice=10, zip_filepath='path/to/archive.zip')`
+        - To extract and unzip files from an archived record at index 10 and save them to 'path/to/extracted/', call:
+        `pull_archive(indice=10, zip_filepath='path/to/extracted/')`
 
         Note:
         - This method assumes that the `retrieve_indices` method is available and can successfully
         retrieve the record containing the base64-encoded archive.
         - The archive is expected to be stored in the record under the key '%BYTES%' and be encoded in base64.
-                
         """
         
         indices = [indice]
@@ -900,18 +973,27 @@ class forge:
         current_line = 0
         collection = []
         suite = Fernet(self.validate_user()["master"])
-        with open(self.files["objects"],"rb") as file:
+        with open(self.files["objects"], "rb") as file:
             for line in file:
-                if indices_indice<len(indices):
-                    if (current_line == indices[indices_indice]):
+                if indices_indice < len(indices):
+                    if current_line == indices[indices_indice]:
                         record = json.loads(suite.decrypt(line).decode("utf-8"))
                         collection.append(record)
-                        indices_indice+=1
-                current_line+=1
+                        indices_indice += 1
+                current_line += 1
         
         record = collection[0]
-        with open(zip_filepath,"wb") as file:
-            file.write(base64.b64decode(record["%BYTES%"].encode("ascii")))
+        zip_data = base64.b64decode(record["%BYTES%"].encode("ascii"))
+
+        # Unzipping the file
+        filepath
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+        with open("temp.zip", "wb") as temp_zip:
+            temp_zip.write(zip_data)
+        with zipfile.ZipFile("temp.zip", 'r') as zip_ref:
+            zip_ref.extractall(filepath)
+        os.remove("temp.zip")  # Clean up the temporary zip file
     
     # destroys the objects after confirming the admin policy
     def destroy(self):
