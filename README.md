@@ -85,6 +85,7 @@ Security is paramount in the `Forge` class. Let's authenticate with the system t
 
 ```python
 forge.user_session("admin", "password", "./documents.key")
+forge.open_armr("./documents.armr")
 ```
 
 ## Managing Data
@@ -103,7 +104,7 @@ Efficiently query and retrieve data based on specific criteria.
 
 ```python
 # Query the database
-query_result = forge.query_map([{"field":"%TYPE%","value":"ARCHIVE"}])
+query_result = forge.query_map([{"type":"test"}])
 
 # Retrieve a slice of the database
 data_slice = forge.retrieve_slice(0, 10)
