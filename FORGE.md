@@ -41,3 +41,94 @@ The complexity and innovation behind the Forge class showcase the immense techni
 ### Conclusion
 
 The Forge class stands out as a powerful tool for secure data management, combining security, efficiency, and ease of use in one comprehensive package. Its development is a significant achievement, highlighting the importance of technical expertise in creating solutions that meet and exceed market demands. As Forge begins to influence the secure data management landscape, its potential for empowering businesses and advancing serverless computing practices is unmistakable.
+
+
+
+Creating an IPython Notebook (`.ipynb`) to share involves combining code from the demonstration of the `Forge` class with insightful commentary derived from the third report. Below is an outline of what the walkthrough in the notebook would look like, structured to provide both code examples and explanatory text in markdown cells.
+
+---
+
+# Secure Data Management with the Forge Class
+
+This Jupyter notebook provides a walkthrough of using the `Forge` class from the `armr_forge` library, showcasing its capabilities in secure data management tailored for small businesses and serverless computing environments.
+
+## Introduction
+
+The `Forge` class represents a leap forward in managing encrypted data, combining ease of use with robust security features. Designed with small businesses in mind, it offers an accessible yet powerful tool for secure data storage and retrieval.
+
+## Setup
+
+First, ensure you have the `armr_forge` library installed in your environment:
+
+```bash
+pip install armr_forge
+```
+
+Now, let's import the `Forge` class and initialize it.
+
+```python
+from armr_forge.forge import forge
+forge = forge()
+```
+
+## Creating an Encrypted Database
+
+The `Forge` class simplifies the creation of a secure, encrypted database. Here, we're initializing an empty ARMR file with predefined data categories.
+
+```python
+forge.forge_armr("admin", "password", "./documents.armr", "./documents.key", ["type", "name", "owner"])
+```
+
+## Establishing a User Session
+
+Security is paramount in the `Forge` class. Let's authenticate with the system to validate our session.
+
+```python
+forge.user_session("admin", "password", "./documents.key")
+```
+
+## Managing Data
+
+### Adding Data
+
+The `Forge` class supports adding various data types securely. Here, we add a text document as an archived object.
+
+```python
+forge.append_objects({"index":{"type":"test","name":"test_name_01","owner":"StalwartBI"},"filepath":r"C:\Users\StalwartBI\test_document.txt"}, "archive")
+```
+
+### Querying and Retrieving Data
+
+Efficiently query and retrieve data based on specific criteria.
+
+```python
+# Query the database
+query_result = forge.query_map([{"field":"%TYPE%","value":"ARCHIVE"}])
+
+# Retrieve a slice of the database
+data_slice = forge.retrieve_slice(0, 10)
+```
+
+### Extracting Archived Data
+
+Easily access and extract archived files stored within the database.
+
+```python
+forge.pull_archive(0, "./test.zip")
+```
+
+## Closing the Session
+
+It's crucial to close the session properly to ensure data integrity and clean up temporary resources.
+
+```python
+forge.close_armr("./documents.armr")
+```
+
+## Conclusion
+
+The `Forge` class offers a comprehensive solution for small businesses and serverless applications, addressing the need for secure and efficient data management. Through this walkthrough, we've explored its core functionalities, from creating an encrypted database to adding, querying, and retrieving data securely.
+
+---
+
+This outline provides a foundation for a Jupyter notebook that combines practical code execution with educational content. Each section not only guides the user through performing specific tasks using the `Forge` class but also contextualizes the operations within broader data management and security considerations.
